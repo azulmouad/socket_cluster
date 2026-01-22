@@ -1,5 +1,5 @@
 name: socket_cluster
-description: "A new Flutter package project."
+description: A Flutter package that provides SocketCluster client functionality for real-time communication in Flutter applications.
 version: 0.0.1
 homepage:
 
