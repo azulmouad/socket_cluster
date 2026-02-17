@@ -8,29 +8,86 @@ import 'package:socket_cluster/socket/library/socket_event_type.dart';
 import 'package:socket_cluster/socket/socket_listener.dart';
 
 class SocketClusterController implements SocketEventListener {
+  SocketClusterController({bool enableLog = true}) : _enableLog = enableLog;
+
+  static const String _logTag = '[SocketCluster]';
+
   Socket? _socket;
   final Set<String> _subscribedChannels = {};
 
   SocketListener? listener;
   ReconnectStrategy? strategy = ReconnectStrategy(
-      reconnectInterval: 5000, maxReconnectInterval: 60000, maxAttempts: 30);
+    reconnectInterval: 5000,
+    maxReconnectInterval: 60000,
+    maxAttempts: 30,
+  );
 
   String? _defaultChannelName = '';
   String? _socketUrl;
   var _isClosed = false;
 
-  Future<void> subscribe(
-      {SocketEventCallBackListener? eventCallBack,
-      String? channelName,
-      required String socketUrl}) async {
+  bool _enableLog;
+
+  bool get enableLog => _enableLog;
+
+  set enableLog(bool value) {
+    _enableLog = value;
+    _socket?.enableLog = value;
+    if (listener != null) {
+      listener!.enableLog = value;
+    }
+  }
+
+  void _debugLog(String message) {
+    if (_enableLog) {
+      log('$_logTag $message');
+    }
+  }
+
+  Future<void> subscribe({
+    SocketEventCallBackListener? eventCallBack,
+    String? channelName,
+    required String socketUrl,
+  }) async {
     _isClosed = false;
     _defaultChannelName = channelName;
-    listener = SocketListener(this, eventCallBack);
+    _socketUrl = socketUrl; // Save socket URL for reconnection
+    listener = SocketListener(this, eventCallBack, enableLog: _enableLog);
+
+    if (channelName == null || channelName.isEmpty) {
+      _debugLog(
+        '[SocketClusterController] Failed to subscribe: channel name is empty',
+      );
+      return;
+    }
+
+    if (socketUrl.isEmpty) {
+      _debugLog(
+        '[SocketClusterController] Failed to subscribe: socket URL is empty',
+      );
+      return;
+    }
+
+    _debugLog(
+      '[SocketClusterController] Attempting to subscribe to channel: $channelName',
+    );
 
     try {
-      _subscribeToChannel(_socket, channelName!);
+      if (_socket == null) {
+        _debugLog(
+          '[SocketClusterController] Socket not connected, connecting first...',
+        );
+        await connect(socketUrl);
+      }
+
+      _subscribeToChannel(_socket, channelName);
+      _debugLog(
+        '[SocketClusterController] Successfully subscribed to channel: $channelName',
+      );
     } catch (e) {
-      log('[SocketClusterController] : ${e.toString()}');
+      _debugLog(
+        '[SocketClusterController] Failed to subscribe to channel $channelName: ${e.toString()}',
+      );
       await startReconnection(channelName, socketUrl);
     }
   }
@@ -43,6 +100,7 @@ class SocketClusterController implements SocketEventListener {
       wsUrl.toString(),
       listener: listener,
       strategy: strategy,
+      enableLog: _enableLog,
     );
   }
 
@@ -51,7 +109,7 @@ class SocketClusterController implements SocketEventListener {
       _isClosed = true;
       _socket = null;
     } catch (e) {
-      log('[destroy] : ${e.toString()}');
+      _debugLog('[destroy] : ${e.toString()}');
     }
   }
 
@@ -68,40 +126,64 @@ class SocketClusterController implements SocketEventListener {
         //   await _socket?.close();
         // }
 
-        log("Successfully unsubscribed from channel: $channelId");
+        _debugLog("Successfully unsubscribed from channel: $channelId");
       } catch (e) {
-        log("Error disconnecting from channel: $channelId, Error: $e");
+        _debugLog("Error disconnecting from channel: $channelId, Error: $e");
       }
     }
   }
 
   void _subscribeToChannel(Socket? socket, String channelId) {
-    if (socket != null) {
-      if (channelId.isNotEmpty) {
-        _subscribedChannels.add(channelId);
-        socket
-          ..createChannel(channelId)
-          ..subscribe(channelId)
-          ..subscribeChannels()
-          ..on(channelId, (name, data, ack) {
-            if (!_isClosed) {
-              listener?.eventCallBack
-                  ?.onEvent(channelId, SocketEventType.Any, data);
-            }
-          });
-      }
+    if (socket == null) {
+      _debugLog(
+        '[SocketClusterController] Cannot subscribe to channel $channelId: socket is null',
+      );
+      return;
+    }
+
+    if (channelId.isEmpty) {
+      _debugLog(
+        '[SocketClusterController] Cannot subscribe: channel ID is empty',
+      );
+      return;
+    }
+
+    try {
+      _subscribedChannels.add(channelId);
+      socket
+        ..createChannel(channelId)
+        ..subscribe(channelId)
+        ..subscribeChannels()
+        ..on(channelId, (name, data, ack) {
+          if (!_isClosed) {
+            listener?.eventCallBack?.onEvent(
+              channelId,
+              SocketEventType.Any,
+              data,
+            );
+          }
+        });
+      _debugLog(
+        '[SocketClusterController] Channel subscription initiated for: $channelId',
+      );
+    } catch (e) {
+      _subscribedChannels.remove(channelId);
+      _debugLog(
+        '[SocketClusterController] Error during channel subscription for $channelId: $e',
+      );
+      rethrow;
     }
   }
 
   @override
   void onConnected() {
     strategy?.reset();
-    log('[SocketClusterController] : onConnected');
+    _debugLog('[SocketClusterController] : onConnected');
   }
 
   @override
   void onDisconnected() {
-    log('[SocketClusterController] : onDisconnected');
+    _debugLog('[SocketClusterController] : onDisconnected');
     if (_socketUrl != null) {
       startReconnection(_defaultChannelName, _socketUrl!);
     }
@@ -111,29 +193,59 @@ class SocketClusterController implements SocketEventListener {
     if (_isClosed) {
       return;
     }
+
+    // Use stored socketUrl if provided socketUrl is empty
+    final urlToUse = socketUrl.isEmpty ? _socketUrl : socketUrl;
+
+    if (urlToUse == null || urlToUse.isEmpty) {
+      _debugLog(
+        '[SocketClusterController] Cannot reconnect: socket URL is empty',
+      );
+      return;
+    }
+
     if (strategy?.areAttemptsComplete() == false) {
-      log('[SocketClusterController] : startReconnection');
+      _debugLog(
+        '[SocketClusterController] Starting reconnection to: $urlToUse',
+      );
       strategy?.processValues();
-      log('[SocketClusterController] : Reconnection attempt: ${strategy?.attmptsMade}');
+      _debugLog(
+        '[SocketClusterController] Reconnection attempt: ${strategy?.attmptsMade}',
+      );
       await Socket.connect(
-        socketUrl,
-        listener: listener,
-        strategy: strategy,
-      ).then((value) {
-        _socket = value;
-        _subscribeToChannel(value, channelName!);
-        strategy?.reset();
-      }).catchError((err) async {
-        log('[SocketClusterController] : Error: $err');
-        await Future.delayed(
-                Duration(milliseconds: strategy?.reconnectInterval ?? 3000))
-            .then((a) {
-          startReconnection(channelName, socketUrl);
-        });
-      });
+            urlToUse,
+            listener: listener,
+            strategy: strategy,
+            enableLog: _enableLog,
+          )
+          .then((value) {
+            _socket = value;
+            _debugLog(
+              '[SocketClusterController] Successfully reconnected to: $urlToUse',
+            );
+            if (channelName != null && channelName.isNotEmpty) {
+              _debugLog(
+                '[SocketClusterController] Attempting to resubscribe to channel: $channelName',
+              );
+              _subscribeToChannel(value, channelName);
+            }
+            strategy?.reset();
+          })
+          .catchError((err) async {
+            _debugLog(
+              '[SocketClusterController] Reconnection failed: $err (URL: $urlToUse)',
+            );
+            await Future.delayed(
+              Duration(milliseconds: strategy?.reconnectInterval ?? 3000),
+            ).then((a) {
+              startReconnection(channelName, urlToUse);
+            });
+          });
     } else {
       strategy?.reset();
-      log('[SocketClusterController] : All reconnection attempts are exhausted.');
+      _debugLog(
+        '[SocketClusterController] All reconnection attempts are exhausted.',
+      );
     }
   }
 

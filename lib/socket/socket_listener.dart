@@ -6,10 +6,14 @@ import 'package:socket_cluster/socket/library/socket_callback.dart';
 import 'package:socket_cluster/socket/library/socket_event_callback.dart';
 
 class SocketListener extends BasicListener {
-  SocketListener(this.callBack, this.eventCallBack);
+  SocketListener(this.callBack, this.eventCallBack, {this.enableLog = true});
+
+  static const String _logTag = '[SocketCluster]';
 
   SocketEventListener? callBack;
   SocketEventCallBackListener? eventCallBack;
+
+  bool enableLog;
 
   String tag = "SocketListener";
 
@@ -17,18 +21,24 @@ class SocketListener extends BasicListener {
 
   @override
   void onAuthentication(Socket socket, bool? status) {
-    log('$tag:onAuthentication: socket $socket status $status');
+    if (enableLog) {
+      log('$_logTag $tag:onAuthentication: socket $socket status $status');
+    }
   }
 
   @override
   void onConnectError(Socket socket, e) {
-    log('$tag:onConnectError: socket $socket e $e');
+    if (enableLog) {
+      log('$_logTag $tag:onConnectError: socket $socket e $e');
+    }
   }
 
   @override
   void onConnected(Socket socket) {
     callBack?.onConnected();
-    log('$tag:onConnected!');
+    if (enableLog) {
+      log('$_logTag $tag:onConnected!');
+    }
     //Do on connect
     _resetMessageReceived();
   }
@@ -36,13 +46,17 @@ class SocketListener extends BasicListener {
   @override
   void onDisconnected(Socket socket) {
     callBack?.onDisconnected();
-    log('$tag:onDisconnected!');
+    if (enableLog) {
+      log('$_logTag $tag:onDisconnected!');
+    }
     //Start Reconnection
   }
 
   @override
   void onSetAuthToken(String? token, Socket socket) {
-    log('$tag:onSetAuthToken: socket $socket token $token');
+    if (enableLog) {
+      log('$_logTag $tag:onSetAuthToken: socket $socket token $token');
+    }
     socket.authToken = token;
   }
 

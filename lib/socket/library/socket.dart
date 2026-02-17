@@ -11,11 +11,14 @@ import 'channel.dart';
 import 'emitter.dart';
 
 class Socket extends Emitter {
+  static const String _logTag = '[SocketCluster]';
+
   dynamic _socket;
   String? url;
   String? id;
   final ReconnectStrategy? strategy;
   final BasicListener? listener;
+  bool enableLog;
   int _counter = 0;
   String? authToken;
   final List<Channel> channels = [];
@@ -28,8 +31,13 @@ class Socket extends Emitter {
   static const int CLOSING = 2;
   static const int CLOSED = 3;
 
-  Socket._internal(this._socket,
-      {this.authToken, this.strategy, this.listener}) {
+  Socket._internal(
+    this._socket, {
+    this.authToken,
+    this.strategy,
+    this.listener,
+    this.enableLog = true,
+  }) {
     _socket = _socket;
     if (globalSocketPlatform is IoSocketPlatform) {
       _socket.listen(handleMessage).onDone(onSocketDone);
@@ -42,10 +50,13 @@ class Socket extends Emitter {
     }
   }
 
-  static Future<Socket> connect(String url,
-      {String? authToken,
-      ReconnectStrategy? strategy,
-      BasicListener? listener}) async {
+  static Future<Socket> connect(
+    String url, {
+    String? authToken,
+    ReconnectStrategy? strategy,
+    BasicListener? listener,
+    bool enableLog = true,
+  }) async {
     if (globalSocketPlatform is IoSocketPlatform) {
       final socket = await globalSocketPlatform.webSocket(url);
       return Socket._internal(
@@ -53,11 +64,17 @@ class Socket extends Emitter {
         authToken: authToken,
         strategy: strategy,
         listener: listener,
+        enableLog: enableLog,
       );
     } else {
       final htmlsocket = globalSocketPlatform.webSocket(url);
-      final socket0 = Socket._internal(htmlsocket,
-          authToken: authToken, strategy: strategy, listener: listener);
+      final socket0 = Socket._internal(
+        htmlsocket,
+        authToken: authToken,
+        strategy: strategy,
+        listener: listener,
+        enableLog: enableLog,
+      );
       await whenTrue(socket0._socket.onOpen as Stream);
       return socket0;
     }
@@ -97,10 +114,8 @@ class Socket extends Emitter {
     strategy?.attmptsMade = 0;
     final authObject = {
       'event': '#handshake',
-      'data': {
-        'authToken': authToken,
-      },
-      'cid': ++_counter
+      'data': {'authToken': authToken},
+      'cid': ++_counter,
     };
     // Note: ported C# code had Formatting.Indented parameter
     final dynamic json = jsonEncode(authObject);
@@ -136,7 +151,9 @@ class Socket extends Emitter {
         //print('Empty Message received: $message <--- from the websocket.');
         return;
       }
-      log('Message received: $message');
+      if (enableLog) {
+        log('$_logTag Message received: $message');
+      }
 
       final map = jsonDecode(message);
       final data = map['data'];
@@ -150,7 +167,9 @@ class Socket extends Emitter {
 
       switch (Parser.parse(data, rid as int?, cid as int?, event as String?)) {
         case ParseResult.ISAUTHENTICATED:
-          log('IS authenticated got called');
+          if (enableLog) {
+            log('$_logTag IS authenticated got called');
+          }
           id = data['id'] as String?;
           bool? auth = data['isAuthenticated'] as bool?;
           if (listener != null) {
@@ -164,13 +183,17 @@ class Socket extends Emitter {
           break;
         case ParseResult.REMOVETOKEN:
           authToken = null;
-          log('Removetoken got called');
+          if (enableLog) {
+            log('$_logTag Removetoken got called');
+          }
           break;
         case ParseResult.SETTOKEN:
           if (listener != null) {
             listener!.onSetAuthToken(data['token'] as String?, this);
           }
-          log('Set token got called');
+          if (enableLog) {
+            log('$_logTag Set token got called');
+          }
           break;
         case ParseResult.EVENT:
           if (hasEventAck(event)) {
@@ -187,7 +210,7 @@ class Socket extends Emitter {
             if (mapObj != null) {
               AckCall fn = mapObj[1] as AckCall;
               fn(mapObj[0] as String, map['error'], map['data']);
-                        }
+            }
           }
           break;
       }
@@ -222,6 +245,9 @@ class Socket extends Emitter {
   }
 
   Socket subscribe(String channel, [AckCall? ack]) {
+    if (enableLog) {
+      log('$_logTag Attempting to subscribe to channel: $channel');
+    }
     int count = ++_counter;
     final message = {
       'event': '#subscribe',
@@ -229,11 +255,16 @@ class Socket extends Emitter {
         'channel': channel,
         // 'userId' : 'unbzprhk' //for test
       },
-      'cid': count
+      'cid': count,
     };
     if (ack != null) _acks[count] = getAckObject(channel, ack);
     final json = jsonEncode(message);
     sendOrAdd(json);
+    if (enableLog) {
+      log(
+        '$_logTag Subscription request sent for channel: $channel (cid: $count)',
+      );
+    }
     return this;
   }
 
@@ -251,7 +282,7 @@ class Socket extends Emitter {
     var message = {
       'event': '#publish',
       'data': {'channel': channel, 'data': data},
-      'cid': count
+      'cid': count,
     };
     if (ack != null) _acks[count] = getAckObject(channel, ack);
     var json = jsonEncode(message);
