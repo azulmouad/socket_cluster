@@ -1,11 +1,12 @@
 name: socket_cluster
 description: A Flutter package that provides SocketCluster client functionality for real-time communication in Flutter applications.
-version: 0.0.1
-homepage:
+version: 1.0.0
+homepage: https://github.com/azulmouad/socket_cluster
+repository: https://github.com/azulmouad/socket_cluster
 
 environment:
-  sdk: ^3.10.4
-  flutter: ">=1.17.0"
+  sdk: ">=3.0.0 <4.0.0"
+  flutter: ">=3.0.0"
 
 dependencies:
   flutter:
