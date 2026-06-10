@@ -1,281 +1,247 @@
 # Socket Cluster
 
-A Flutter package that provides SocketCluster client functionality for real-time communication in Flutter applications. This package enables bidirectional communication between your Flutter app and SocketCluster servers.
-
-## Features
-
-- ✅ **WebSocket Support**: Full WebSocket client implementation for SocketCluster
-- ✅ **Automatic Reconnection**: Configurable reconnection strategy with exponential backoff
-- ✅ **Channel Management**: Subscribe/unsubscribe to multiple channels
-- ✅ **Event Handling**: Listen to connection events and channel messages
-- ✅ **Cross-Platform**: Works on iOS, Android, Web, and Desktop
-- ✅ **Type-Safe**: Strongly typed API with Dart's type system
+A Flutter package that provides a SocketCluster client for real-time communication. Supports iOS, Android, Web, and Desktop via `dart:io` / `dart:html` WebSocket.
 
 ## Installation
 
-Add this to your package's `pubspec.yaml` file:
-
 ```yaml
 dependencies:
-  socket_cluster: ^1.0.0
+  socket_cluster: ^1.1.0
 ```
-
-Then run:
 
 ```bash
 flutter pub get
 ```
 
-## Usage
-
-### Basic Setup
+## Quick Start
 
 ```dart
 import 'package:socket_cluster/socket_cluster.dart';
 
-// Create a controller instance
-final socketController = SocketClusterController();
-
-// Connect to SocketCluster server
-await socketController.connect('wss://your-socket-server.com');
+final controller = SocketClusterController();
+await controller.connect('wss://your-server.com');
 ```
 
-### Subscribe to a Channel
+---
+
+## Recommended Pattern — Direct Socket API
+
+For production apps, use the raw `Socket` API directly instead of `SocketClusterController.subscribe()`. This gives you full control over channel registration, reconnection, and lifecycle.
 
 ```dart
-// Create a callback to handle events
-final callback = SocketCallback((data) {
-  print('Received data: $data');
-  // Handle your data here
-});
+import 'package:socket_cluster/socket_cluster.dart';
+
+class SocketService {
+  Socket? _socket;
+
+  Future<void> connect(String url) async {
+    _socket = await Socket.connect(
+      url,
+      listener: _MyListener(
+        onConnected: _onConnected,
+        onDisconnected: _onDisconnected,
+      ),
+    );
+  }
+
+  void subscribe(String channelName, void Function(dynamic) onMessage) {
+    final socket = _socket;
+    if (socket == null) return;
+
+    // Tell the server to start publishing this channel.
+    socket.subscribe(channelName);
+
+    // Handle #publish messages: {"event":"#publish","data":{"channel":"...","data":{...}}}
+    socket.onSubscribe(channelName, (name, data) => onMessage(data));
+
+    // handle direct events: {"event":"channelName","data":{...}}
+    // Since 1.1.0: skipped automatically when onSubscribe is registered —
+    // no double-fire even if the server sends both formats.
+    socket.on(channelName, (name, data, ack) => onMessage(data));
+  }
+
+  void unsubscribe(String channelName) {
+    _socket?.unsubscribe(channelName);
+  }
+
+  Future<void> destroy() async {
+    await _controller?.destroy();
+  }
+}
+```
+
+### Connection event listener
+
+Extend `BasicListener` to handle connection lifecycle:
+
+```dart
+class _MyListener extends BasicListener {
+  final VoidCallback onConnected;
+  final VoidCallback onDisconnected;
+
+  _MyListener({required this.onConnected, required this.onDisconnected});
+
+  @override
+  void onConnected(Socket socket) => onConnected();
+
+  @override
+  void onDisconnected(Socket socket) => onDisconnected();
+
+  @override
+  void onConnectError(Socket socket, dynamic e) {
+    debugPrint('Socket error: $e');
+  }
+
+  @override
+  void onAuthentication(Socket socket, bool? status) {}
+
+  @override
+  void onSetAuthToken(String? token, Socket socket) {
+    socket.authToken = token;
+  }
+}
+```
+
+---
+
+## SocketClusterController (High-level API)
+
+Suitable for simple use cases. For apps that need reconnection, multiple channels, or lifecycle management, the direct `Socket` API above is preferred.
+
+```dart
+final controller = SocketClusterController();
+
+// Disable built-in reconnect if you implement your own
+controller.strategy = null;
+
+// Set a listener before connecting
+controller.listener = SocketListener(
+  MySocketEventListener(),
+  null,
+);
+
+await controller.connect('wss://your-server.com');
 
 // Subscribe to a channel
-await socketController.subscribe(
-  socketUrl: 'wss://your-socket-server.com',
-  channelName: 'my-channel',
-  eventCallBack: callback,
+await controller.subscribe(
+  socketUrl: 'wss://your-server.com',
+  channelName: 'notifications',
+  eventCallBack: SocketCallback((data) {
+    print('Received: $data');
+  }),
+);
+
+// Cleanup
+await controller.destroy();
+```
+
+---
+
+## Reconnection Strategy
+
+```dart
+final controller = SocketClusterController();
+
+controller.strategy = ReconnectStrategy(
+  reconnectInterval: 3000,      // Initial delay: 3s
+  maxReconnectInterval: 60000,  // Max delay: 60s
+  maxAttempts: 10,              // null = unlimited
 );
 ```
 
-### Complete Example
+`getReconnectInterval()` returns an exponentially increasing delay — it doubles each attempt up to `maxReconnectInterval`. `areAttemptsComplete()` is safe when `maxAttempts` is `null` (returns `false`, allowing unlimited retries).
+
+---
+
+## Emit & Publish
 
 ```dart
-import 'package:socket_cluster/socket_cluster.dart';
+final socket = await Socket.connect('wss://your-server.com');
 
-class MySocketService {
-  late SocketClusterController _controller;
-  
-  Future<void> initialize() async {
-    _controller = SocketClusterController();
-    
-    // Configure reconnection strategy (optional)
-    _controller.strategy = ReconnectStrategy(
-      reconnectInterval: 5000,
-      maxReconnectInterval: 60000,
-      maxAttempts: 30,
-    );
-    
-    // Connect to server
-    await _controller.connect('wss://your-socket-server.com');
-    
-    // Subscribe to channel with event handler
-    await _controller.subscribe(
-      socketUrl: 'wss://your-socket-server.com',
-      channelName: 'notifications',
-      eventCallBack: SocketCallback((data) {
-        print('Notification received: $data');
-        // Handle notification
-      }),
-    );
-  }
-  
-  Future<void> disconnect(String channelId) async {
-    await _controller.disconnect(channelId);
-  }
-  
-  Future<void> cleanup() async {
-    await _controller.destroy();
-  }
-}
-```
+// Emit a custom event
+socket.emit('my-event', {'key': 'value'});
 
-### Using with Riverpod (Optional)
-
-```dart
-import 'package:hooks_riverpod/hooks_riverpod.dart';
-import 'package:socket_cluster/socket_cluster.dart';
-
-final socketControllerProvider = Provider<SocketClusterController>((ref) {
-  final controller = SocketClusterController();
-  
-  // Setup connection when provider is created
-  ref.onDispose(() {
-    controller.destroy();
-  });
-  
-  return controller;
+// Emit with acknowledgement
+socket.emit('my-event', {'key': 'value'}, (name, error, data) {
+  print('Ack received: $data');
 });
 
-// In your widget
-class MyWidget extends ConsumerWidget {
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final socketController = ref.watch(socketControllerProvider);
-    
-    // Use socketController...
-    
-    return Container();
-  }
-}
+// Publish to a channel
+socket.publish('my-channel', {'message': 'hello'});
 ```
 
-### Custom Event Listener
+---
+
+## Authentication
 
 ```dart
-class MySocketEventListener implements SocketEventListener {
-  @override
-  void onConnected() {
-    print('Socket connected!');
-    // Handle connection
-  }
-  
-  @override
-  void onDisconnected() {
-    print('Socket disconnected!');
-    // Handle disconnection
-  }
-}
-
-// Use custom listener
-final controller = SocketClusterController();
-final listener = SocketListener(
-  MySocketEventListener(),
-  SocketCallback((data) => print('Data: $data')),
+final socket = await Socket.connect(
+  'wss://your-server.com',
+  authToken: 'your-jwt-token',
 );
-
-controller.listener = listener;
 ```
 
-### Reconnection Strategy
-
-```dart
-// Custom reconnection strategy
-final strategy = ReconnectStrategy(
-  reconnectInterval: 3000,        // Initial delay: 3 seconds
-  maxReconnectInterval: 60000,    // Max delay: 60 seconds
-  maxAttempts: 30,                 // Max reconnection attempts
-);
-
-final controller = SocketClusterController();
-controller.strategy = strategy;
-```
-
-### Multiple Channels
-
-```dart
-final controller = SocketClusterController();
-await controller.connect('wss://your-socket-server.com');
-
-// Subscribe to multiple channels
-await controller.subscribe(
-  socketUrl: 'wss://your-socket-server.com',
-  channelName: 'channel-1',
-  eventCallBack: SocketCallback((data) {
-    print('Channel 1: $data');
-  }),
-);
-
-await controller.subscribe(
-  socketUrl: 'wss://your-socket-server.com',
-  channelName: 'channel-2',
-  eventCallBack: SocketCallback((data) {
-    print('Channel 2: $data');
-  }),
-);
-
-// Disconnect from a specific channel
-await controller.disconnect('channel-1');
-```
+---
 
 ## API Reference
 
-### SocketClusterController
+### `Socket`
 
-Main controller class for managing SocketCluster connections.
+| Method | Description |
+|---|---|
+| `Socket.connect(url, {authToken, strategy, listener})` | Open a WebSocket connection |
+| `emit(event, data, [ack])` | Send an event to the server |
+| `subscribe(channel, [ack])` | Subscribe to a channel |
+| `unsubscribe(channel, [ack])` | Unsubscribe from a channel |
+| `publish(channel, data, [ack])` | Publish data to a channel |
+| `on(event, fn)` | Listen for direct events |
+| `onSubscribe(channel, fn)` | Listen for `#publish` channel messages |
+| `sendOrAdd(json)` | Send a raw JSON string |
 
-#### Methods
+### `ReconnectStrategy`
 
-- `Future<void> connect(String socketUrl)` - Connect to SocketCluster server
-- `Future<void> subscribe({required String socketUrl, String? channelName, SocketEventCallBackListener? eventCallBack})` - Subscribe to a channel
-- `Future<void> disconnect(String channelId)` - Unsubscribe from a channel
-- `Future<void> destroy()` - Clean up and close all connections
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `reconnectInterval` | `int` | `3000` | Initial delay (ms) |
+| `maxReconnectInterval` | `int` | `30000` | Max delay (ms) |
+| `maxAttempts` | `int?` | `null` | Max attempts, `null` = unlimited |
 
-#### Properties
+| Method | Description |
+|---|---|
+| `getReconnectInterval()` | Returns next delay with exponential backoff |
+| `areAttemptsComplete()` | `true` when limit reached; always `false` if `maxAttempts` is `null` |
+| `processValues()` | Increment attempt counter |
+| `reset()` | Reset attempt counter |
 
-- `ReconnectStrategy? strategy` - Reconnection strategy configuration
-- `SocketListener? listener` - Socket event listener
+### `BasicListener`
 
-### ReconnectStrategy
+| Callback | Description |
+|---|---|
+| `onConnected(socket)` | Socket connected and handshake complete |
+| `onDisconnected(socket)` | Socket closed |
+| `onConnectError(socket, e)` | Connection failed |
+| `onAuthentication(socket, status)` | Auth status received |
+| `onSetAuthToken(token, socket)` | Server set an auth token |
 
-Configuration for automatic reconnection behavior.
-
-#### Constructor Parameters
-
-- `reconnectInterval` (int, default: 3000) - Initial delay between reconnection attempts in milliseconds
-- `maxReconnectInterval` (int, default: 30000) - Maximum delay between reconnection attempts in milliseconds
-- `maxAttempts` (int?, default: null) - Maximum number of reconnection attempts (null = unlimited)
-
-#### Methods
-
-- `void reset()` - Reset the attempt counter
-- `void processValues()` - Increment the attempt counter
-- `bool areAttemptsComplete()` - Check if max attempts reached
-- `int getReconnectInterval()` - Get current reconnect interval
-
-### SocketCallback
-
-Simple callback wrapper for handling channel events.
-
-```dart
-SocketCallback((data) {
-  // Handle data
-})
-```
-
-### SocketListener
-
-Listener for socket connection events. Extends `BasicListener` and provides callbacks for:
-- `onConnected()` - Called when socket connects
-- `onDisconnected()` - Called when socket disconnects
-- `onAuthentication()` - Called during authentication
-- `onConnectError()` - Called on connection errors
-- `onSetAuthToken()` - Called when auth token is set
-
-## Error Handling
-
-The package handles errors gracefully:
-
-- Connection errors trigger automatic reconnection (if configured)
-- Failed subscriptions will attempt reconnection
-- All errors are logged using `dart:developer` log
+---
 
 ## Platform Support
 
-- ✅ iOS
-- ✅ Android
-- ✅ Web
-- ✅ macOS
-- ✅ Windows
-- ✅ Linux
+| Platform | Supported |
+|---|---|
+| iOS | ✅ |
+| Android | ✅ |
+| Web | ✅ |
+| macOS | ✅ |
+| Windows | ✅ |
+| Linux | ✅ |
 
-## Contributing
-
-Contributions are welcome! Please feel free to submit a Pull Request.
+---
 
 ## License
 
-See the LICENSE file for details.
+MIT — see [LICENSE](LICENSE).
 
 ## Additional Information
 
-For more information about SocketCluster protocol, visit: [SocketCluster Documentation](https://socketcluster.io/)
+[SocketCluster Documentation](https://socketcluster.io/)
