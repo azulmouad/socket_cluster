@@ -98,6 +98,16 @@ class Socket extends Emitter {
     }
   }
 
+  Future<void> close() async {
+    try {
+      if (globalSocketPlatform is IoSocketPlatform) {
+        await _socket.close();
+      } else {
+        _socket.close();
+      }
+    } catch (_) {}
+  }
+
   void setProxy(String host, int port) {
     throw UnimplementedError();
     /*var proxy = new HttpConnectProxy(new IPEndPoint(IPAddress.Parse(host), port));
