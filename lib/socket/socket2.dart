@@ -210,7 +210,7 @@ class SocketClusterController implements SocketEventListener {
       );
       strategy?.processValues();
       _debugLog(
-        '[SocketClusterController] Reconnection attempt: ${strategy?.attmptsMade}',
+        '[SocketClusterController] Reconnection attempt: ${strategy?.attemptsMade}',
       );
       await Socket.connect(
             urlToUse,

@@ -44,6 +44,11 @@ class Emitter {
   }
 
   Emitter handleEmit(String? event, dynamic object) {
+    // If a #publish (onSubscribe) handler exists for this event, let it handle
+    // the message exclusively — prevents double-fire when the server sends the
+    // same payload as both a direct event and a #publish channel message.
+    if (_publishCallbacks.containsKey(event)) return this;
+
     if (_singleCallbacks.containsKey(event)) {
       final listener = _singleCallbacks[event!]!;
       listener(event, object);

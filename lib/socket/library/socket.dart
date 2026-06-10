@@ -111,7 +111,7 @@ class Socket extends Emitter {
 
   void onSocketOpened([event]) {
     _counter = 0;
-    strategy?.attmptsMade = 0;
+    strategy?.attemptsMade = 0;
     final authObject = {
       'event': '#handshake',
       'data': {'authToken': authToken},
