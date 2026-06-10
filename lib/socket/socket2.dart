@@ -162,7 +162,6 @@ class SocketClusterController implements SocketEventListener {
       socket
         ..createChannel(channelId)
         ..subscribe(channelId)
-        ..subscribeChannels()
         ..onSubscribe(channelId, (name, data) {
           if (!_isClosed) {
             capturedCallback?.onEvent(channelId, SocketEventType.Any, data);

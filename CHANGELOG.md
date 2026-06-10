@@ -1,3 +1,7 @@
+## 1.2.1
+
+* **Fix:** Triple subscription bug — channel subscribe request was sent 3× on every connect/reconnect. `subscribeChannels()` was called redundantly in `_subscribeToChannel` (causing a second send) and again inside the `ISAUTHENTICATED` handler in `socket.dart` (causing a third). Both redundant calls removed; a single `socket.subscribe(channelId)` is now the only send path.
+
 ## 1.2.0
 
 * **Fix:** `SocketEventListener` now exposes `onConnectError(String error)` — connection errors are no longer silently swallowed.

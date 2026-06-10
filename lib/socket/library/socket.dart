@@ -185,7 +185,6 @@ class Socket extends Emitter {
           if (listener != null) {
             listener!.onAuthentication(this, auth);
           }
-          subscribeChannels();
           break;
         case ParseResult.PUBLISH:
           handlePublish(data['channel'] as String?, data['data']);
