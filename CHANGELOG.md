@@ -1,3 +1,10 @@
+## 1.2.0
+
+* **Fix:** `SocketEventListener` now exposes `onConnectError(String error)` — connection errors are no longer silently swallowed.
+* **Fix:** `SocketListener.onConnectError` now forwards the error to the app-level `callBack`, not just logs it.
+* **Fix:** `_subscribeToChannel` now registers both `onSubscribe` (for `#publish` messages) and `on` (for direct events) — previously only direct events were received via the controller API.
+* **Fix:** `startReconnection` now uses `getReconnectInterval()` for real exponential backoff — previously always used the fixed initial interval.
+
 ## 1.1.0
 
 * **Fix:** `ReconnectStrategy.areAttemptsComplete()` no longer crashes when `maxAttempts` is null — returns `false` (unlimited retries) as documented.

@@ -28,6 +28,7 @@ class SocketListener extends BasicListener {
 
   @override
   void onConnectError(Socket socket, e) {
+    callBack?.onConnectError(e.toString());
     if (enableLog) {
       log('$_logTag $tag:onConnectError: socket $socket e $e');
     }

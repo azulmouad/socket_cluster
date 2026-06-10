@@ -154,6 +154,15 @@ class SocketClusterController implements SocketEventListener {
         ..createChannel(channelId)
         ..subscribe(channelId)
         ..subscribeChannels()
+        ..onSubscribe(channelId, (name, data) {
+          if (!_isClosed) {
+            listener?.eventCallBack?.onEvent(
+              channelId,
+              SocketEventType.Any,
+              data,
+            );
+          }
+        })
         ..on(channelId, (name, data, ack) {
           if (!_isClosed) {
             listener?.eventCallBack?.onEvent(
@@ -184,6 +193,14 @@ class SocketClusterController implements SocketEventListener {
   @override
   void onDisconnected() {
     _debugLog('[SocketClusterController] : onDisconnected');
+    if (_socketUrl != null) {
+      startReconnection(_defaultChannelName, _socketUrl!);
+    }
+  }
+
+  @override
+  void onConnectError(String error) {
+    _debugLog('[SocketClusterController] : onConnectError $error');
     if (_socketUrl != null) {
       startReconnection(_defaultChannelName, _socketUrl!);
     }
@@ -236,7 +253,7 @@ class SocketClusterController implements SocketEventListener {
               '[SocketClusterController] Reconnection failed: $err (URL: $urlToUse)',
             );
             await Future.delayed(
-              Duration(milliseconds: strategy?.reconnectInterval ?? 3000),
+              Duration(milliseconds: strategy?.getReconnectInterval() ?? 3000),
             ).then((a) {
               startReconnection(channelName, urlToUse);
             });
