@@ -27,6 +27,7 @@ class SocketClusterController implements SocketEventListener {
   );
 
   String? _socketUrl;
+  String? _authToken;
   var _isClosed = false;
 
   bool _enableLog;
@@ -51,9 +52,11 @@ class SocketClusterController implements SocketEventListener {
     SocketEventCallBackListener? eventCallBack,
     String? channelName,
     required String socketUrl,
+    String? authToken,
   }) async {
     _isClosed = false;
     _socketUrl = socketUrl;
+    if (authToken != null) _authToken = authToken;
 
     if (channelName == null || channelName.isEmpty) {
       _debugLog(
@@ -96,14 +99,16 @@ class SocketClusterController implements SocketEventListener {
     }
   }
 
-  Future<void> connect(String socketUrl) async {
+  Future<void> connect(String socketUrl, {String? authToken}) async {
     if (_socket != null) return;
     _socketUrl = socketUrl;
+    if (authToken != null) _authToken = authToken;
     // Create listener once — connection events always route to this controller.
     listener ??= SocketListener(this, null, enableLog: _enableLog);
     final wsUrl = Uri.parse(socketUrl);
     _socket = await Socket.connect(
       wsUrl.toString(),
+      authToken: _authToken,
       listener: listener,
       strategy: strategy,
       enableLog: _enableLog,
@@ -228,6 +233,7 @@ class SocketClusterController implements SocketEventListener {
       );
       await Socket.connect(
             urlToUse,
+            authToken: _authToken,
             listener: listener,
             strategy: strategy,
             enableLog: _enableLog,

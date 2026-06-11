@@ -1,3 +1,7 @@
+## 1.2.2
+
+* **Feat:** `SocketClusterController.subscribe()` and `connect()` now accept an optional `authToken` parameter. The token is forwarded to the SC `#handshake` frame, satisfying brokers that require JWT authentication before channel subscription.
+
 ## 1.2.1
 
 * **Fix:** Triple subscription bug — channel subscribe request was sent 3× on every connect/reconnect. `subscribeChannels()` was called redundantly in `_subscribeToChannel` (causing a second send) and again inside the `ISAUTHENTICATED` handler in `socket.dart` (causing a third). Both redundant calls removed; a single `socket.subscribe(channelId)` is now the only send path.
