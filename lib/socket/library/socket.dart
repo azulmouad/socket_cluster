@@ -185,6 +185,13 @@ class Socket extends Emitter {
           if (listener != null) {
             listener!.onAuthentication(this, auth);
           }
+          // Re-send #subscribe for every created channel now that the server
+          // has processed the handshake. A #subscribe sent before the
+          // handshake ack is only registered ("connection-channel OK") but
+          // never bound for delivery ("connection-subscription OK") — without
+          // this re-send, channels subscribed at connect time receive no
+          // events at all.
+          subscribeChannels();
           break;
         case ParseResult.PUBLISH:
           handlePublish(data['channel'] as String?, data['data']);

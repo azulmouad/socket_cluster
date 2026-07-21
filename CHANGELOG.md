@@ -1,3 +1,7 @@
+## 1.2.3
+
+* **Fix:** Restored `subscribeChannels()` in the `ISAUTHENTICATED` handler — removed in 1.2.1 as part of the triple-subscription fix, but it is required: a `#subscribe` sent before the server's handshake ack is only registered (`connection-channel OK`) and never bound for delivery (`connection-subscription OK`), so channels subscribed at connect time received no events at all. The redundant `subscribeChannels()` in `_subscribeToChannel` stays removed, so each connect now sends the subscribe twice (once pre-handshake, once post-handshake), not three times.
+
 ## 1.2.2
 
 * **Feat:** `SocketClusterController.subscribe()` and `connect()` now accept an optional `authToken` parameter. The token is forwarded to the SC `#handshake` frame, satisfying brokers that require JWT authentication before channel subscription.
